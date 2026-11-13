@@ -175,7 +175,9 @@ class AssBuilder:
             m = re.search(r"\d[\d\s.,]*", value)
             y_num, y_cap = yc - int(70 * self.k), yc + int(110 * self.k)
             if m:
-                prefix, num_raw, suffix = value[: m.start()], m.group(0), value[m.end():]
+                raw = m.group(0)
+                num_raw = raw.rstrip()
+                prefix, suffix = value[: m.start()], raw[len(num_raw):] + value[m.end():]
                 num_clean = num_raw.replace(" ", "").replace(" ", "").replace(",", ".")
                 try:
                     target = float(num_clean)
