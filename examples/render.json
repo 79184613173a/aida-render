@@ -1,0 +1,129 @@
+{
+  "scenes": [
+    {
+      "src": "https://example.com/assets/img1.jpg",
+      "duration": 3,
+      "kenburns": "in",
+      "transition": "fade"
+    },
+    {
+      "src": "https://example.com/assets/clip_h.mp4",
+      "duration": 3.5,
+      "fit": "blur",
+      "transition": "slideleft",
+      "trim_start": 1
+    },
+    {
+      "src": "https://example.com/assets/img2.jpg",
+      "duration": 3,
+      "kenburns": "left",
+      "transition": "none"
+    },
+    {
+      "src": "https://example.com/assets/clip_h.mp4",
+      "duration": 2.5,
+      "fit": "cover"
+    }
+  ],
+  "voiceover": {
+    "src": "https://example.com/assets/vo.mp3",
+    "start": 0.3
+  },
+  "music": {
+    "src": "https://example.com/assets/music.mp3",
+    "volume": 0.25
+  },
+  "sfx": [
+    {
+      "src": "https://example.com/assets/whoosh.wav",
+      "at": 2.8
+    }
+  ],
+  "captions": {
+    "segments": [
+      {
+        "start": 0.3,
+        "end": 2.2,
+        "text": "Ремонт за 30 дней",
+        "words": [
+          {
+            "w": "Ремонт",
+            "start": 0.3,
+            "end": 0.9
+          },
+          {
+            "w": "за",
+            "start": 0.9,
+            "end": 1.2
+          },
+          {
+            "w": "30",
+            "start": 1.2,
+            "end": 1.6
+          },
+          {
+            "w": "дней",
+            "start": 1.6,
+            "end": 2.2
+          }
+        ]
+      },
+      {
+        "start": 6.6,
+        "end": 8.8,
+        "text": "или вернём деньги до копейки"
+      }
+    ],
+    "style": {
+      "uppercase": true
+    }
+  },
+  "texts": [
+    {
+      "kind": "title",
+      "text": "Почему ремонт затягивается?",
+      "start": 0.2,
+      "end": 2.8,
+      "position": "upper"
+    },
+    {
+      "kind": "stat",
+      "value": "+35%",
+      "text": "дольше обычного срока",
+      "start": 3.2,
+      "end": 6.3,
+      "position": "center"
+    },
+    {
+      "kind": "list",
+      "items": [
+        "Смета без сюрпризов",
+        "Фотоотчёт каждый день",
+        "Штраф за просрочку"
+      ],
+      "start": 6.6,
+      "end": 9.4,
+      "position": "center"
+    },
+    {
+      "kind": "cta",
+      "text": "Запишись на замер 👇",
+      "start": 9.6,
+      "end": 12,
+      "position": "lower"
+    }
+  ],
+  "images": [
+    {
+      "src": "https://example.com/assets/logo.png",
+      "start": 0,
+      "end": -1,
+      "width": 180,
+      "y": 100
+    }
+  ],
+  "callback_url": "https://n8n.aidamedia.ru/webhook/render-done",
+  "meta": {
+    "project_id": "ptest"
+  }
+}

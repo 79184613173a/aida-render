@@ -1,0 +1,23 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
+    DATA_DIR=/data FONTS_DIR=/app/fonts WORKERS=1 FILE_TTL_HOURS=72
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg fontconfig fonts-dejavu-core ca-certificates curl \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY fonts/ /app/fonts/
+RUN cp /app/fonts/*.ttf /usr/local/share/fonts/ 2>/dev/null; fc-cache -f >/dev/null
+COPY app/ /app/app/
+
+VOLUME ["/data"]
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:8000/health || exit 1
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
