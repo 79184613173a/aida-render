@@ -150,7 +150,7 @@ async def startup():
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "version": "2026-11-13.2", "ffmpeg": ffmpeg_version(), "queue": queue.qsize(), "workers": WORKERS}
+    return {"ok": True, "version": "2026-11-13.3", "ffmpeg": ffmpeg_version(), "queue": queue.qsize(), "workers": WORKERS}
 
 
 @app.post("/render", dependencies=[Depends(auth)])
