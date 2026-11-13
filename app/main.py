@@ -22,6 +22,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from .board import BoardRequest, build_board
 from .models import RenderRequest
 from .render import Downloader, RenderError, ffmpeg_version, probe, render
 
@@ -177,6 +178,17 @@ async def get_file(name: str):
     if not p.exists():
         raise HTTPException(404, "file not found")
     return FileResponse(p)
+
+
+@app.post("/storyboard", dependencies=[Depends(auth)])
+async def storyboard(req: BoardRequest):
+    """Сетка кадров одной картинкой. Синхронно: обычно 2–5 секунд."""
+    if not req.frames:
+        raise HTTPException(400, "нет кадров")
+    data = await asyncio.to_thread(build_board, req)
+    name = f"board_{uuid.uuid4().hex}.jpg"
+    (OUT / name).write_bytes(data)
+    return {"url": f"{BASE_URL}/files/{name}", "frames": len(req.frames)}
 
 
 class ProbeRequest(BaseModel):
