@@ -180,16 +180,18 @@ def join_scenes(req: RenderRequest, segs: List[dict], out: Path) -> str:
     cmd = ["ffmpeg", "-y"]
     for s in segs:
         cmd += ["-i", s["video"]]
-    parts, prev, t = [], "[0:v]", 0.0
+    # одна временная база у всех входов, иначе xfade после concat падает (1/1000000 vs 1/15360)
+    parts = [f"[{i}:v]fps={req.fps},format=yuv420p,setpts=PTS-STARTPTS,settb=AVTB[n{i}]" for i in range(len(segs))]
+    prev, t = "[n0]", 0.0
     for i in range(1, len(segs)):
         sc = req.scenes[i - 1]
         t += sc.duration
         label = f"[v{i}]"
         if sc.transition and sc.transition != "none":
-            parts.append(f"{prev}[{i}:v]xfade=transition={sc.transition}:duration={sc.transition_duration:.3f}:"
-                         f"offset={t:.3f}{label}")
+            parts.append(f"{prev}[n{i}]xfade=transition={sc.transition}:duration={sc.transition_duration:.3f}:"
+                         f"offset={t:.3f},settb=AVTB{label}")
         else:
-            parts.append(f"{prev}[{i}:v]concat=n=2:v=1:a=0{label}")
+            parts.append(f"{prev}[n{i}]concat=n=2:v=1:a=0,settb=AVTB{label}")
         prev = label
     cmd += ["-filter_complex", ";".join(parts), "-map", prev, "-an", *enc_args(req.quality, req.fps), str(joined)]
     run(cmd)
