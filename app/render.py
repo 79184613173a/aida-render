@@ -38,6 +38,17 @@ def run(cmd: List[str], timeout: int = 1800) -> subprocess.CompletedProcess:
     return p
 
 
+def clean_image(src: str, dst: Path) -> str:
+    """Пересохраняет картинку в чистый RGBA PNG. Не читается — понятная ошибка вместо зависшего ffmpeg."""
+    from PIL import Image
+    try:
+        with Image.open(src) as im:
+            im.convert("RGBA").save(dst, "PNG")
+    except Exception as e:  # noqa
+        raise RenderError(f"картинка-оверлей не читается: {e}")
+    return str(dst)
+
+
 def ffmpeg_version() -> str:
     try:
         return subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True).stdout.splitlines()[0]
@@ -230,12 +241,16 @@ def render(req: RenderRequest, work: Path, out_file: Path, log=print) -> dict:
         vchain, filters = "[0:v]", []
 
         for k, im in enumerate(req.images):
-            path = dl.get(im.src)
-            cmd += ["-loop", "1", "-framerate", str(fps), "-t", f"{total:.3f}", "-i", path]
-            end = total if im.end < 0 else im.end
+            # картинку пересохраняем через PIL (битый PNG иначе вешает ffmpeg) и читаем ОДИН раз:
+            # повтор кадра делает фильтр loop в памяти, а не -loop 1 на входе (тот копит буфер парсера)
+            path = clean_image(dl.get(im.src), work / f"overlay_{k}.png")
+            cmd += ["-i", path]
+            end = total if im.end < 0 else min(im.end, total)
             fade = f",fade=t=in:st={im.start:.3f}:d={im.fade}:alpha=1,fade=t=out:st={max(im.start, end - im.fade):.3f}:d={im.fade}:alpha=1" if im.fade > 0 else ""
-            filters.append(f"[{idx}:v]scale={int(im.width)}:-1,format=rgba{fade}[im{k}]")
-            filters.append(f"{vchain}[im{k}]overlay=x={im.x}:y={im.y}:enable='between(t,{im.start:.3f},{end:.3f})'[vo{k}]")
+            filters.append(f"[{idx}:v]scale={int(im.width)}:-1,format=rgba,loop=loop=-1:size=1:start=0,"
+                           f"setpts=N/{fps}/TB,trim=duration={end + 0.1:.3f}{fade}[im{k}]")
+            filters.append(f"{vchain}[im{k}]overlay=x={im.x}:y={im.y}:eof_action=pass:"
+                           f"enable='between(t,{im.start:.3f},{end:.3f})'[vo{k}]")
             vchain = f"[vo{k}]"
             idx += 1
 
