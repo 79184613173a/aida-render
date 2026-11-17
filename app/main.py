@@ -3,6 +3,7 @@
 POST /render         таймлайн JSON -> job_id (в очередь), по готовности POST на callback_url
 GET  /jobs/{id}      статус задания
 GET  /files/{name}   готовый mp4 / jpg (без ключа: имя — случайный uuid)
+POST /scenes         границы планов рефа и чистые окна без склеек
 POST /probe          длительность и параметры файла по URL (сколько длится озвучка и т.п.)
 GET  /health         жив ли сервис, версия ffmpeg, длина очереди
 """
@@ -26,6 +27,7 @@ from .board import BoardRequest, build_board
 from .frames import FramesRequest, build_frames, to_b64
 from .models import RenderRequest
 from .render import Downloader, RenderError, ffmpeg_version, probe, render
+from .scenes import ScenesRequest, build_windows, detect_cuts
 
 API_KEY = os.getenv("RENDER_API_KEY", "")
 DATA = Path(os.getenv("DATA_DIR", "/data"))
@@ -151,7 +153,7 @@ async def startup():
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "version": "2026-11-13.3", "ffmpeg": ffmpeg_version(), "queue": queue.qsize(), "workers": WORKERS}
+    return {"ok": True, "version": "2026-11-18.1", "ffmpeg": ffmpeg_version(), "queue": queue.qsize(), "workers": WORKERS}
 
 
 @app.post("/render", dependencies=[Depends(auth)])
@@ -206,6 +208,25 @@ async def frames(req: FramesRequest):
         return {"url": f"{BASE_URL}/files/{name}", "b64": to_b64(res["data"]), "media_type": "image/jpeg",
                 "times": res["times"], "columns": res["columns"], "cell": res["cell"],
                 "duration": round(float(info.get("duration") or 0), 2)}
+    except RenderError as e:
+        raise HTTPException(400, str(e))
+    finally:
+        dl.close()
+        shutil.rmtree(work, ignore_errors=True)
+
+
+@app.post("/scenes", dependencies=[Depends(auth)])
+async def scenes(req: ScenesRequest):
+    """Склейки в видео и чистые окна внутри одного плана: из них монтажёр берёт куски рефа."""
+    work = WORK / f"scenes_{uuid.uuid4().hex}"
+    dl = Downloader(work)
+    try:
+        path = await asyncio.to_thread(dl.get, req.url)
+        info = await asyncio.to_thread(probe, path)
+        dur = float(info.get("duration") or 0)
+        cuts = await asyncio.to_thread(detect_cuts, path, req.threshold)
+        wins = build_windows(cuts, dur, req.min_len, req.margin)
+        return {"duration": round(dur, 2), "cuts": cuts, "windows": wins}
     except RenderError as e:
         raise HTTPException(400, str(e))
     finally:
