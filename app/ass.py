@@ -158,14 +158,17 @@ class AssBuilder:
             self.event(start, end, name, anim + wrap(esc(txt), 16), layer=2)
 
         elif o.kind == "plate":
-            name = self.style(st, st.size or 58, 5, 0, box=True)
+            name = self.style(st, st.size or 58, 5, 0)
             x_from = -self.W // 2
             anim = f"{{\\move({x_from},{yc},{xc},{yc},0,320)\\fad(0,180)}}"
             self.event(start, end, name, anim + wrap(esc(txt), 26), layer=2)
 
         elif o.kind == "cta":
-            st_box = st.model_copy(update={"box": True, "box_color": st.accent, "box_opacity": 1.0, "color": "#111111"})
-            name = self.style(st_box, st.size or 64, 5, 0, box=True)
+            if st.box:
+                st_box = st.model_copy(update={"box": True, "box_color": st.accent, "box_opacity": 1.0, "color": "#111111"})
+                name = self.style(st_box, st.size or 64, 5, 0, box=True)
+            else:  # без подложки: текст цветом акцента с обводкой
+                name = self.style(st.model_copy(update={"color": st.accent}), st.size or 64, 5, 0)
             dur_ms = int((end - start) * 1000)
             pulse = "".join(
                 f"\\t({t},{t + 300},\\fscx106\\fscy106)\\t({t + 300},{t + 600},\\fscx100\\fscy100)"
@@ -211,18 +214,29 @@ class AssBuilder:
                            f"{{\\pos({xc},{y_cap})\\fad(200,150)}}" + wrap(esc(txt), 24), layer=2)
 
         elif o.kind == "list":
-            name = self.style(st.model_copy(update={"box": True}), st.size or 56, 4, 0, box=True)
+            # подложка только если явно попросили (st.box); иначе белый текст с обводкой, как титры
+            size = st.size or 56
+            name = self.style(st, size, 4, 0)
             n = max(1, len(o.items))
-            gap = int(120 * self.k)
+            gap = int(size * 1.75 * self.k)
             y0 = yc - (n - 1) * gap // 2
             x = int(110 * self.k)
+            d = max(8, int(size * 0.42 * self.k))           # диаметр кружка
+            r = d / 2
+            k = 0.5523 * r
+            circle = (f"m {r:.1f} 0 b {r + k:.1f} 0 {d:.1f} {r - k:.1f} {d:.1f} {r:.1f} "
+                      f"b {d:.1f} {r + k:.1f} {r + k:.1f} {d:.1f} {r:.1f} {d:.1f} "
+                      f"b {r - k:.1f} {d:.1f} 0 {r + k:.1f} 0 {r:.1f} b 0 {r - k:.1f} {r - k:.1f} 0 {r:.1f} 0")
+            dot = self.style(st.model_copy(update={"box": False, "color": st.accent, "outline_width": max(1.0, st.outline_width * 0.6)}), size, 4, 0, box=False)
+            tx = x + d + int(size * 0.38 * self.k)
+            dy = int(size * 0.05 * self.k)                  # визуальный центр строчных букв чуть ниже центра строки
             for i, item in enumerate(o.items):
                 t0 = start + i * o.stagger
                 y = y0 + i * gap
-                bullet = f"{{\\c{accent}}}●{{\\c{inline_color(st.color)}}} "
-                anim = f"{{\\move({x - int(80 * self.k)},{y},{x},{y},0,250)\\fad(200,150)}}"
+                sl = int(80 * self.k)
+                self.event(t0, end, dot, f"{{\\move({x - sl},{y + dy},{x},{y + dy},0,250)\\fad(200,150)\\p1}}" + circle + "{\\p0}", layer=2)
                 it = item.upper() if st.uppercase else item
-                self.event(t0, end, name, anim + bullet + esc(it), layer=2)
+                self.event(t0, end, name, f"{{\\move({tx - sl},{y},{tx},{y},0,250)\\fad(200,150)}}" + esc(it), layer=2)
 
     # ---------- сборка ----------
     def render(self) -> str:
