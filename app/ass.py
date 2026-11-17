@@ -106,9 +106,15 @@ class AssBuilder:
         st = cap.style
         size = st.size or 86
         align, mv = {"bottom": (2, 520), "center": (5, 0), "top": (8, 300)}[cap.position]
+        if cap.y is not None:
+            align, mv = 5, 0
         name = self.style(st, size, align, mv)
         accent = inline_color(st.accent)
         pop = "{\\fscx88\\fscy88\\t(0,90,\\fscx100\\fscy100)}" if cap.pop else ""
+        at = ""
+        if cap.y is not None:
+            yy = max(60, min(self.H - 60, int(cap.y)))
+            at = f"{{\\pos({self.W // 2},{yy})}}"
         for seg in cap.segments:
             text = seg.text.upper() if st.uppercase else seg.text
             if cap.highlight and seg.words:
@@ -120,10 +126,10 @@ class AssBuilder:
                         t = esc(token)
                         parts.append(f"{{\\c{accent}}}{t}{{\\c{inline_color(st.color)}}}" if j == i else t)
                     line = self._wrap_tokens(parts, words, cap.max_chars)
-                    lead = pop if i == 0 else ""
+                    lead = at + (pop if i == 0 else "")
                     self.event(w.start, w_end, name, lead + line)
             else:
-                self.event(seg.start, seg.end, name, pop + wrap(esc(text), cap.max_chars))
+                self.event(seg.start, seg.end, name, at + pop + wrap(esc(text), cap.max_chars))
 
     @staticmethod
     def _wrap_tokens(parts, raw, max_chars):

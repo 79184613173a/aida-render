@@ -49,6 +49,18 @@ def clean_image(src: str, dst: Path) -> str:
     return str(dst)
 
 
+def blur_mask(dst: Path, cw: int, ch: int, ix: int, iy: int, iw: int, ih: int, feather: int) -> str:
+    """Маска зоны блюра: внутри зоны непрозрачно, наружу мягко гаснет на feather px."""
+    from PIL import Image, ImageDraw, ImageFilter
+    m = Image.new("L", (cw, ch), 0)
+    g = feather // 3
+    ImageDraw.Draw(m).rectangle([ix - g, iy - g, ix + iw + g, iy + ih + g], fill=255)
+    if feather > 0:
+        m = m.filter(ImageFilter.GaussianBlur(max(1, feather / 3)))
+    m.save(dst)
+    return str(dst)
+
+
 def ffmpeg_version() -> str:
     try:
         return subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True).stdout.splitlines()[0]
@@ -239,6 +251,34 @@ def render(req: RenderRequest, work: Path, out_file: Path, log=print) -> dict:
         cmd = ["ffmpeg", "-y", "-i", joined]
         idx = 1
         vchain, filters = "[0:v]", []
+
+        # размытые зоны: чужие титры, логотипы. Ложатся первыми, графика и титры — поверх
+        for k, b in enumerate(req.blurs):
+            bx, by = max(0, min(W - 8, int(b.x))), max(0, min(H - 8, int(b.y)))
+            bw, bh = max(8, min(W - bx, int(b.w))), max(8, min(H - by, int(b.h)))
+            f = max(0, int(b.feather))
+            cx, cy = max(0, bx - f), max(0, by - f)
+            cw, ch = min(W, bx + bw + f) - cx, min(H, by + bh + f) - cy
+            cw, ch = cw - cw % 2, ch - ch % 2
+            start = max(0.0, float(b.start))
+            end = total if b.end < 0 else min(float(b.end), total)
+            if end - start < 0.05 or cw < 8 or ch < 8:
+                continue
+            mask = blur_mask(work / f"blurmask_{k}.png", cw, ch, bx - cx, by - cy, bw, bh, f)
+            cmd += ["-i", mask]
+            lr = max(1, min(int(b.strength), cw // 2 - 1, ch // 2 - 1))
+            cr = max(1, min(int(b.strength), cw // 4 - 1, ch // 4 - 1))
+            dim = max(0.0, min(0.8, float(b.dim)))
+            filters.append(f"{vchain}split=2[bm{k}][bs{k}]")
+            filters.append(f"[bs{k}]crop={cw}:{ch}:{cx}:{cy},boxblur=luma_radius={lr}:luma_power=3:"
+                           f"chroma_radius={cr}:chroma_power=3,lutyuv=y=val*{1 - dim:.3f}[bb{k}]")
+            filters.append(f"[{idx}:v]format=gray,loop=loop=-1:size=1:start=0,setpts=N/{fps}/TB,"
+                           f"trim=duration={total + 1:.3f}[bk{k}]")
+            filters.append(f"[bb{k}][bk{k}]alphamerge[ba{k}]")
+            filters.append(f"[bm{k}][ba{k}]overlay=x={cx}:y={cy}:eof_action=pass:"
+                           f"enable='between(t,{start:.3f},{end:.3f})'[vb{k}]")
+            vchain = f"[vb{k}]"
+            idx += 1
 
         for k, im in enumerate(req.images):
             # картинку пересохраняем через PIL (битый PNG иначе вешает ffmpeg) и читаем ОДИН раз:

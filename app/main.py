@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from .board import BoardRequest, build_board
+from .frames import FramesRequest, build_frames, to_b64
 from .models import RenderRequest
 from .render import Downloader, RenderError, ffmpeg_version, probe, render
 
@@ -189,6 +190,27 @@ async def storyboard(req: BoardRequest):
     name = f"board_{uuid.uuid4().hex}.jpg"
     (OUT / name).write_bytes(data)
     return {"url": f"{BASE_URL}/files/{name}", "frames": len(req.frames)}
+
+
+@app.post("/frames", dependencies=[Depends(auth)])
+async def frames(req: FramesRequest):
+    """Кадры видео сеткой с разметкой 10% — для агента, который ищет на рефе титры и логотипы."""
+    work = WORK / f"frames_{uuid.uuid4().hex}"
+    dl = Downloader(work)
+    try:
+        path = await asyncio.to_thread(dl.get, req.url)
+        info = await asyncio.to_thread(probe, path)
+        res = await asyncio.to_thread(build_frames, req, path, float(info.get("duration") or 0) or 1.0)
+        name = f"frames_{uuid.uuid4().hex}.jpg"
+        (OUT / name).write_bytes(res["data"])
+        return {"url": f"{BASE_URL}/files/{name}", "b64": to_b64(res["data"]), "media_type": "image/jpeg",
+                "times": res["times"], "columns": res["columns"], "cell": res["cell"],
+                "duration": round(float(info.get("duration") or 0), 2)}
+    except RenderError as e:
+        raise HTTPException(400, str(e))
+    finally:
+        dl.close()
+        shutil.rmtree(work, ignore_errors=True)
 
 
 class ProbeRequest(BaseModel):

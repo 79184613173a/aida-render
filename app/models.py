@@ -49,6 +49,7 @@ class Captions(BaseModel):
     highlight: bool = True                     # подсветка текущего слова (нужны words)
     pop: bool = True                           # лёгкий «поп» на появлении
     max_chars: int = 22                        # перенос строки
+    y: Optional[int] = None                    # центр строки по Y в px (перекрывает position) — например, на месте титров рефа
     style: TextStyle = TextStyle()
 
 
@@ -72,6 +73,19 @@ class ImageOverlay(BaseModel):
     y: Union[int, str] = 120
     width: int = 260
     fade: float = 0.25
+
+
+class BlurRegion(BaseModel):
+    """Размытая зона поверх видео: прячет чужие титры, логотипы, водяные знаки."""
+    x: int = 0                                 # левый край зоны, px
+    y: int                                     # верхний край зоны, px
+    w: int = 1080                              # ширина, px (1080 = полоса на всю ширину)
+    h: int                                     # высота, px
+    start: float = 0
+    end: float = -1                            # -1 = до конца ролика
+    strength: int = 28                         # сила размытия
+    feather: int = 36                          # мягкость краёв наружу от зоны, px
+    dim: float = 0.25                          # затемнение размытого 0..0.8 (читаемость наших титров)
 
 
 class AudioTrack(BaseModel):
@@ -105,6 +119,7 @@ class RenderRequest(BaseModel):
     captions: Optional[Captions] = None
     texts: List[TextOverlay] = []
     images: List[ImageOverlay] = []
+    blurs: List[BlurRegion] = []               # размытые зоны (ложатся раньше картинок и текста)
     loudness: float = -14                      # LUFS, норма для Reels/Shorts
     quality: Literal["draft", "final"] = "final"
     callback_url: Optional[str] = None
