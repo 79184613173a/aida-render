@@ -25,6 +25,7 @@ n8n отдаёт таймлайн JSON, сервис собирает mp4 чер
 | GET | `/jobs/{id}` | статус: `queued` / `rendering` / `done` / `error`, `url`, `thumb_url`, `duration`, `scene_starts` |
 | GET | `/files/{id}.mp4` | готовый ролик (и `{id}.jpg` — обложка) |
 | POST | `/scenes` | `{url, threshold?, min_len?, margin?}` → `cuts` (секунды склеек) и `windows` (чистые окна `a`–`b` внутри одного плана) |
+| POST | `/audio/concat` | `{urls[], gap?, lufs?}` → склеенный mp3 (loudnorm на каждый блок, паузы `gap`), `url`, `duration`, `parts[{n,start,end,dur}]` |
 | POST | `/probe` | `{url}` → длительность и параметры файла (например, сколько длится озвучка) |
 
 Когда рендер готов (или упал), сервис шлёт на `callback_url` POST с тем же JSON, что отдаёт `/jobs/{id}`,

@@ -3,6 +3,7 @@
 POST /render         таймлайн JSON -> job_id (в очередь), по готовности POST на callback_url
 GET  /jobs/{id}      статус задания
 GET  /files/{name}   готовый mp4 / jpg (без ключа: имя — случайный uuid)
+POST /audio/concat   склейка озвучки из блоков (нормализация, паузы, тайминги)
 POST /scenes         границы планов рефа и чистые окна без склеек
 POST /probe          длительность и параметры файла по URL (сколько длится озвучка и т.п.)
 GET  /health         жив ли сервис, версия ffmpeg, длина очереди
@@ -23,6 +24,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from .audio import AudioConcatRequest, concat_audio
 from .board import BoardRequest, build_board
 from .frames import FramesRequest, build_frames, to_b64
 from .models import RenderRequest
@@ -153,7 +155,7 @@ async def startup():
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "version": "2026-11-18.1", "ffmpeg": ffmpeg_version(), "queue": queue.qsize(), "workers": WORKERS}
+    return {"ok": True, "version": "2026-11-18.2", "ffmpeg": ffmpeg_version(), "queue": queue.qsize(), "workers": WORKERS}
 
 
 @app.post("/render", dependencies=[Depends(auth)])
@@ -209,6 +211,27 @@ async def frames(req: FramesRequest):
                 "times": res["times"], "columns": res["columns"], "cell": res["cell"],
                 "duration": round(float(info.get("duration") or 0), 2)}
     except RenderError as e:
+        raise HTTPException(400, str(e))
+    finally:
+        dl.close()
+        shutil.rmtree(work, ignore_errors=True)
+
+
+@app.post("/audio/concat", dependencies=[Depends(auth)])
+async def audio_concat(req: AudioConcatRequest):
+    """Склеивает озвучку из блоков в один mp3 и возвращает тайминги каждого блока."""
+    if not req.urls:
+        raise HTTPException(400, "нет блоков")
+    work = WORK / f"audio_{uuid.uuid4().hex}"
+    work.mkdir(parents=True, exist_ok=True)
+    dl = Downloader(work)
+    try:
+        paths = [await asyncio.to_thread(dl.get, u) for u in req.urls]
+        name = f"voice_{uuid.uuid4().hex}.mp3"
+        parts = await asyncio.to_thread(concat_audio, paths, str(work / name), req.gap, req.lufs)
+        shutil.copyfile(work / name, OUT / name)
+        return {"url": f"{BASE_URL}/files/{name}", "duration": round(parts[-1]["end"], 2), "parts": parts}
+    except (RenderError, RuntimeError) as e:
         raise HTTPException(400, str(e))
     finally:
         dl.close()
