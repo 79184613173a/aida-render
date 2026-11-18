@@ -194,27 +194,55 @@ def normalize_scene(i: int, s: Scene, src: str, out: Path, W: int, H: int, fps: 
     return {"video": str(seg), "audio": audio_path, "image": image}
 
 
+def _concat_copy(files: List[str], dst: Path) -> str:
+    """Склейка без перекодирования (все сегменты уже нормализованы: один кодек, fps, размер)."""
+    lst = dst.with_suffix(".txt")
+    lst.write_text("".join(f"file '{f}'\n" for f in files))
+    run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(lst), "-c", "copy", str(dst)])
+    return str(dst)
+
+
 def join_scenes(req: RenderRequest, segs: List[dict], out: Path) -> str:
-    """Склейка с переходами. Возвращает путь к немому видео."""
+    """Склейка с переходами. Возвращает путь к немому видео.
+
+    Стыки без перехода клеятся копированием потока (почти без памяти), xfade — только на стыках с переходом.
+    Раньше все сцены открывались одним ffmpeg: на 60+ сценах процесс убивало по памяти."""
     joined = out / "joined.mp4"
     if len(segs) == 1:
         shutil.copy(segs[0]["video"], joined)
         return str(joined)
-    cmd = ["ffmpeg", "-y"]
-    for s in segs:
-        cmd += ["-i", s["video"]]
-    # одна база и частота у всех входов и после каждой склейки: иначе xfade в ffmpeg 7 падает (timebase / frame rate 1/0)
-    parts = [f"[{i}:v]setpts=PTS-STARTPTS,fps={req.fps},format=yuv420p[n{i}]" for i in range(len(segs))]
-    prev, t = "[n0]", 0.0
+    # группы подряд идущих сцен без перехода между ними
+    runs, cur = [], [0]
     for i in range(1, len(segs)):
         sc = req.scenes[i - 1]
-        t += sc.duration
-        label = f"[v{i}]"
         if sc.transition and sc.transition != "none":
-            parts.append(f"{prev}[n{i}]xfade=transition={sc.transition}:duration={sc.transition_duration:.3f}:"
-                         f"offset={t:.3f},fps={req.fps}{label}")
+            runs.append(cur)
+            cur = [i]
         else:
-            parts.append(f"{prev}[n{i}]concat=n=2:v=1:a=0,fps={req.fps}{label}")
+            cur.append(i)
+    runs.append(cur)
+    files = []
+    for k, r in enumerate(runs):
+        if len(r) == 1:
+            files.append(segs[r[0]]["video"])
+        else:
+            files.append(_concat_copy([segs[i]["video"] for i in r], out / f"run_{k}.mp4"))
+    if len(files) == 1:
+        shutil.copy(files[0], joined)
+        return str(joined)
+    cmd = ["ffmpeg", "-y"]
+    for f in files:
+        cmd += ["-i", f]
+    # одна база и частота у всех входов и после каждой склейки: иначе xfade в ffmpeg 7 падает (timebase / frame rate 1/0)
+    parts = [f"[{i}:v]setpts=PTS-STARTPTS,fps={req.fps},format=yuv420p[n{i}]" for i in range(len(files))]
+    prev = "[n0]"
+    for k in range(1, len(files)):
+        last = runs[k - 1][-1]  # последняя сцена предыдущей группы; переход описан в ней
+        t = sum(req.scenes[j].duration for j in range(last + 1))
+        sc = req.scenes[last]
+        label = f"[v{k}]"
+        parts.append(f"{prev}[n{k}]xfade=transition={sc.transition}:duration={sc.transition_duration:.3f}:"
+                     f"offset={t:.3f},fps={req.fps}{label}")
         prev = label
     cmd += ["-filter_complex", ";".join(parts), "-map", prev, "-an", *enc_args(req.quality, req.fps), str(joined)]
     run(cmd)
